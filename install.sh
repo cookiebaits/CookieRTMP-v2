@@ -1509,21 +1509,26 @@ view_logs() {
 }
 
 deep_cleanup_ports_and_processes() {
-    echo -e "${YELLOW}Cleaning up host processes and unbinding all ports (1935, 80, 8080, 8081, 8443, 19350-19359)...${NC}"
+    echo -e "${YELLOW}Cleaning up host processes and unbinding ports (1935, 8080, 8081, 8443, 19350-19359; port 80 preserved)...${NC}"
     if [ "$EUID" -ne 0 ] && command -v sudo &> /dev/null; then
         SUDO="sudo"
     else
         SUDO=""
     fi
 
-    # Stop host webservers that might hold port 80
-    $SUDO systemctl stop apache2 2>/dev/null || true
-    $SUDO systemctl stop nginx 2>/dev/null || true
-    $SUDO systemctl stop lighttpd 2>/dev/null || true
+    # NOTE: Port 80 is strictly preserved and never stopped, killed, or unbound.
+    # Host webservers (apache2, nginx, lighttpd) running on port 80 are not touched.
 
-    local PORTS=("$PORT_RTMP" "$PORT_HTTP" "$PORT_STATS" 80 8080 8081 1935 8443 19350 19351 19352 19353 19354 19355 19356 19357 19358 19359)
+    local CANDIDATE_PORTS=("$PORT_RTMP" "$PORT_HTTP" "$PORT_STATS" 8080 8081 1935 8443 19350 19351 19352 19353 19354 19355 19356 19357 19358 19359)
+    local PORTS=()
+    for p in "${CANDIDATE_PORTS[@]}"; do
+        # Do not include port 80 under any circumstances
+        if [ "$p" != "80" ] && [ -n "$p" ]; then
+            PORTS+=("$p")
+        fi
+    done
 
-    # Find and stop any docker containers publishing application ports
+    # Find and stop any docker containers publishing application ports (excluding port 80)
     if command -v docker &> /dev/null; then
         for port in "${PORTS[@]}"; do
             local cids
@@ -1556,13 +1561,13 @@ deep_cleanup_ports_and_processes() {
         fi
     done
 
-    # Terminate any leftover host processes if any were spawned outside container
+    # Terminate leftover host helper processes if any were spawned outside container
     $SUDO pkill -f "tiktok_pusher" 2>/dev/null || true
     $SUDO pkill -f "noalbs" 2>/dev/null || true
     $SUDO pkill -f "stream_validator" 2>/dev/null || true
     $SUDO pkill -f "gunicorn" 2>/dev/null || true
     $SUDO pkill -f "stunnel" 2>/dev/null || true
-    $SUDO pkill -f "nginx" 2>/dev/null || true
+    # Note: Host nginx is intentionally NOT killed to avoid affecting port 80 web services
 }
 
 stop_and_uninstall() {
@@ -1608,7 +1613,7 @@ stop_and_uninstall() {
     rm -rf ./data
     echo -e "${GREEN}Local configuration and data removed.${NC}"
 
-    echo -e "${GREEN}CookieRTMPS and all cached components have been completely uninstalled and all ports unbound.${NC}"
+    echo -e "${GREEN}CookieRTMPS and all cached components have been completely uninstalled and all streaming ports unbound (port 80 preserved).${NC}"
     sleep 3
 }
 
