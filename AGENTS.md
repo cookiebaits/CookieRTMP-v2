@@ -10,7 +10,7 @@
 - **Dual-Streaming**: Supported via separate `live` (horizontal) and `vertical` Nginx applications. `install.sh` handles auto-mirroring and server diversification.
 
 ### Management & UI
-- **Installer**: `install.sh` provides interactive menu reordered for Domain (#5) and Whitelist (#8).
-- **Control Dashboard**: `chat.html` integrated with `stream_validator.py` (Flask) for side-by-side chat and sync title updates.
+- **Installer**: `install.sh` Quick Reference provides "Combined Chat Config Page: http://{host}/{8-char-hex}", randomized per fresh download. Menu options #6 (chat CLI config) and #7 (titles/Twitch API) removed. Sub-option 10 configures NOALBS Scene Switcher MP4 to loop during low bitrate or disconnection for the configured duration.
+- **Control Dashboard**: `chat.html` integrated with `stream_validator.py` (Flask) for unified multi-platform chat overlay (Twitch, YouTube, Kick) with platform logos.
 - **OAuth**: Supported for Twitch and YouTube with background token refresh logic to maintain sessions.
-- **Persistence**: Stream keys and episode counts persisted in host volume `./data`.
+- **Persistence**: Stream keys, chat hex keys, and episode counts persisted in host volume `./data` and `rtmp_config.env`.

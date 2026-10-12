@@ -10,13 +10,13 @@ import { NoalbsTab } from './components/NoalbsTab';
 import { StatsMonitorTab } from './components/StatsMonitorTab';
 import { VPSInstallerTab } from './components/VPSInstallerTab';
 
-function generateHexKey(bytes = 8): string {
+function generateHexKey(bytes = 4): string {
   if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
     const arr = new Uint8Array(bytes);
     crypto.getRandomValues(arr);
     return Array.from(arr).map((b) => b.toString(16).padStart(2, '0')).join('');
   }
-  return Math.random().toString(16).substring(2, 10) + Math.random().toString(16).substring(2, 10);
+  return Math.random().toString(16).substring(2, 10);
 }
 
 export const App: React.FC = () => {
@@ -24,13 +24,20 @@ export const App: React.FC = () => {
   const [isCyclingKey, setIsCyclingKey] = useState<boolean>(false);
   const [isLive, setIsLive] = useState<boolean>(false);
 
-  // Private Hex Key for OBS Browser Source, persisted in localStorage
+  // Private Hex Key for OBS Browser Source, initialized from URL pathname if an 8-char hex is present
   const [obsHexKey, setObsHexKey] = useState<string>(() => {
+    try {
+      const path = window.location.pathname.replace(/^\/+|\/+$/g, '');
+      if (/^[0-9a-fA-F]{8}$/.test(path)) {
+        localStorage.setItem('cookiertmps_obs_hex_key', path);
+        return path;
+      }
+    } catch (e) {}
     try {
       const saved = localStorage.getItem('cookiertmps_obs_hex_key');
       if (saved && saved.length >= 8) return saved;
     } catch (e) {}
-    const initial = generateHexKey(8);
+    const initial = generateHexKey(4);
     try {
       localStorage.setItem('cookiertmps_obs_hex_key', initial);
     } catch (e) {}
@@ -88,13 +95,21 @@ export const App: React.FC = () => {
 
   const handleCycleObsKey = () => {
     setIsCyclingKey(true);
-    const newKey = generateHexKey(8);
+    const newKey = generateHexKey(4);
     setObsHexKey(newKey);
     try {
       localStorage.setItem('cookiertmps_obs_hex_key', newKey);
     } catch (e) {}
     setTimeout(() => setIsCyclingKey(false), 500);
   };
+
+  useEffect(() => {
+    const path = window.location.pathname.replace(/^\/+|\/+$/g, '');
+    if (/^[0-9a-fA-F]{8}$/.test(path)) {
+      setObsHexKey(path);
+      setActiveTab('chat');
+    }
+  }, []);
 
   useEffect(() => {
     fetch('/health')

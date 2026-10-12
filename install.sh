@@ -66,6 +66,7 @@ CHAT_TWITCH=""
 CHAT_YOUTUBE=""
 CHAT_KICK=""
 CHAT_TIKTOK=""
+CHAT_HEX_KEY=""
 
 # Host Port Settings
 PORT_RTMP="1935"
@@ -141,6 +142,7 @@ CHAT_TWITCH="$CHAT_TWITCH"
 CHAT_YOUTUBE="$CHAT_YOUTUBE"
 CHAT_KICK="$CHAT_KICK"
 CHAT_TIKTOK="$CHAT_TIKTOK"
+CHAT_HEX_KEY="$CHAT_HEX_KEY"
 SERVER_DOMAIN="$SERVER_DOMAIN"
 CHUNK_SIZE="$CHUNK_SIZE"
 STREAM_BASE_TITLE="$STREAM_BASE_TITLE"
@@ -165,6 +167,26 @@ PORT_STATS="$PORT_STATS"
 ENV_EOF
     echo -e "${GREEN}Configuration saved to $CONFIG_FILE${NC}"
 }
+
+# Ensure an 8-character random hex key exists (generated uniquely on fresh download)
+if [ -z "$CHAT_HEX_KEY" ]; then
+    if command -v openssl &> /dev/null; then
+        CHAT_HEX_KEY=$(openssl rand -hex 4 2>/dev/null)
+    elif [ -c /dev/urandom ]; then
+        CHAT_HEX_KEY=$(head -c 4 /dev/urandom | xxd -p 2>/dev/null || od -An -tx1 -N4 /dev/urandom | tr -d ' \n' 2>/dev/null)
+    elif command -v python3 &> /dev/null; then
+        CHAT_HEX_KEY=$(python3 -c 'import secrets; print(secrets.token_hex(4))' 2>/dev/null)
+    fi
+    if [ -z "$CHAT_HEX_KEY" ] || [ ${#CHAT_HEX_KEY} -ne 8 ]; then
+        CHAT_HEX_KEY=$(date +%s%N 2>/dev/null | md5sum 2>/dev/null | cut -c1-8)
+    fi
+    if [ -z "$CHAT_HEX_KEY" ] || [ ${#CHAT_HEX_KEY} -ne 8 ]; then
+        CHAT_HEX_KEY="c00k1e88"
+    fi
+    mkdir -p ./data
+    echo "$CHAT_HEX_KEY" > ./data/chat_hex_key.txt 2>/dev/null || true
+    save_config
+fi
 
 prompt_for_key() {
     local platform=$1
@@ -1058,10 +1080,9 @@ configure_noalbs() {
         echo "7) BRB Scene Name (Current: $OBS_SCENE_BRB)"
         echo "8) Low Bitrate Threshold (Current: $LOW_BITRATE kbps)"
         echo "9) Restore Bitrate Threshold (Current: $RESTORE_BITRATE kbps)"
-        echo "10) Toggle Cloud BRB (Currently: $CLOUD_BRB)"
-        echo "11) Configure BRB Video URL (Current: ${BRB_VIDEO_URL:-(None)})"
-        echo "12) Disconnection Protection Duration (Current: ${CLOUD_BRB_TIMEOUT} seconds)"
-        echo "13) Back to Main Menu"
+        echo "10) Configure NOALBS Scene Switcher mp4 (Current: ${BRB_VIDEO_URL:-Default (https://filedn.com/lfh40bKbFfD5um9HDFNrJFR/brb.mp4)})"
+        echo "11) Disconnection Protection Duration (Current: ${CLOUD_BRB_TIMEOUT} seconds)"
+        echo "12) Back to Main Menu"
         echo -e "Select an option: \c"
         read -r noalbs_opt
 
@@ -1117,27 +1138,38 @@ configure_noalbs() {
                 if [ ! -z "$input" ]; then RESTORE_BITRATE="$input"; save_config; fi
                 ;;
             10)
-                if [ "$CLOUD_BRB" == "true" ]; then CLOUD_BRB="false"; else CLOUD_BRB="true"; fi
-                save_config
-                ;;
-            11)
-                echo -e "Enter BRB Video URL (Direct MP4 link, or type 'disable'/'clear' to remove):"
+                echo -e "Enter NOALBS Scene Switcher MP4 URL (Press Enter for default: https://filedn.com/lfh40bKbFfD5um9HDFNrJFR/brb.mp4, or 'clear' to reset):"
                 read -r input
                 if [ "$input" == "disable" ] || [ "$input" == "clear" ] || [ "$input" == "DISABLE" ] || [ "$input" == "CLEAR" ]; then
                     BRB_VIDEO_URL=""
-                    save_config
                     rm -f ./data/brb_video.mp4
-                    echo -e "${GREEN}Cleared BRB Video URL and removed cached video.${NC}"
+                    save_config
+                    echo -e "${GREEN}Cleared custom BRB Video URL. Default fallback will be used if needed.${NC}"
                     sleep 1
                 elif [ ! -z "$input" ]; then
                     BRB_VIDEO_URL="$input"
+                    CLOUD_BRB="true"
+                    FALLBACK_MODE="video"
                     save_config
                     ensure_brb_video_transcoded "$BRB_VIDEO_URL"
+                    echo -e "${GREEN}NOALBS Scene Switcher mp4 configured and verified.${NC}"
+                    echo -e "${YELLOW}Will play on loop during low bitrate (<${LOW_BITRATE} kbps) or disconnect for ${CLOUD_BRB_TIMEOUT} seconds.${NC}"
+                    sleep 2
+                else
+                    if [ -z "$BRB_VIDEO_URL" ]; then
+                        BRB_VIDEO_URL="https://filedn.com/lfh40bKbFfD5um9HDFNrJFR/brb.mp4"
+                    fi
+                    CLOUD_BRB="true"
+                    FALLBACK_MODE="video"
+                    save_config
+                    ensure_brb_video_transcoded "$BRB_VIDEO_URL"
+                    echo -e "${GREEN}Default NOALBS Scene Switcher mp4 downloaded and verified.${NC}"
+                    echo -e "${YELLOW}Will play on loop during low bitrate (<${LOW_BITRATE} kbps) or disconnect for ${CLOUD_BRB_TIMEOUT} seconds.${NC}"
                     sleep 2
                 fi
                 ;;
-            12)
-                echo -e "Enter Disconnection Video Protection Duration in seconds (e.g. 300):"
+            11)
+                echo -e "Enter Disconnection Protection Duration in seconds (Current: $CLOUD_BRB_TIMEOUT):"
                 read -r input
                 if [ ! -z "$input" ]; then
                     CLOUD_BRB_TIMEOUT="$input"
@@ -1146,7 +1178,7 @@ configure_noalbs() {
                     sleep 1
                 fi
                 ;;
-            13) break ;;
+            12|13) break ;;
             *) echo -e "${RED}Invalid option${NC}" ; sleep 1 ;;
         esac
     done
@@ -1426,9 +1458,9 @@ build_and_run() {
         echo -e "Vertical stream:  rtmp://${DISPLAY_HOST}:${PORT_RTMP}/vertical"
         echo -e "Stats available at: http://${DISPLAY_HOST}/stat"
         echo -e "${YELLOW}Combined Chat Links:${NC}"
-        echo -e "  OBS Overlay (Unified): http://${DISPLAY_HOST}/chat.html?mode=unified"
-        echo -e "  Web Dashboard:         http://${DISPLAY_HOST}/"
-        echo -e "  Combined Chat Grid:    http://${DISPLAY_HOST}/chat.html?mode=columns"
+        echo -e "  Combined Chat Config Page: http://${DISPLAY_HOST}/${CHAT_HEX_KEY}"
+        echo -e "  OBS Overlay (Unified):     http://${DISPLAY_HOST}/chat.html?key=${CHAT_HEX_KEY}&mode=unified"
+        echo -e "  Web Dashboard:             http://${DISPLAY_HOST}/"
 
         echo -e "${YELLOW}Resetting services and running integration tests...${NC}"
         docker restart cookie-rtmps
@@ -1623,6 +1655,7 @@ SERVER_IP=$(curl -4 -s ifconfig.me || echo "<your_server_ip>")
 while true; do
     clear
     DISPLAY_HOST=${SERVER_DOMAIN:-$SERVER_IP}
+    CHAT_CONFIG_URL="http://${DISPLAY_HOST}/${CHAT_HEX_KEY}"
     echo -e "${GREEN}=====================================${NC}"
     echo -e "${GREEN}     CookieRTMPS Quick Installer      ${NC}"
     echo -e "${GREEN}=====================================${NC}"
@@ -1630,7 +1663,7 @@ while true; do
     echo -e "  RTMP Ingest:     rtmp://${DISPLAY_HOST}:${PORT_RTMP}/${APP_NAME}"
     echo -e "  Vertical Ingest: rtmp://${DISPLAY_HOST}:${PORT_RTMP}/vertical"
     echo -e "  Stats URL:       http://${DISPLAY_HOST}/stat"
-    echo -e "  Combined Chat:   http://${DISPLAY_HOST}/chat.html?mode=unified"
+    echo -e "  Combined Chat Config Page: ${CHAT_CONFIG_URL}"
     echo -e "  Web Dashboard:   http://${DISPLAY_HOST}/"
     echo "-------------------------------------"
     echo "1) Install Docker (if not installed)"
@@ -1638,16 +1671,14 @@ while true; do
     echo "3) Configure Stream Keys (Vertical)"
     echo "4) Configure OBS Setup & Security Key"
     echo "5) Configure IP Whitelist (Optional)"
-    echo "6) Configure Combined Chat (Optional)"
-        echo "7) Configure Stream Titles & Twitch API (Optional)"
-        echo "8) Configure Domain / Reverse Proxy (Optional)"
-        echo "9) Configure Optimizations (Chunk Size)"
-        echo "10) Configure NOALBS Scene Switcher"
-        echo "11) Build & Start Server"
-        echo "12) Run Integration Tests"
-        echo "13) Stop Server & Uninstall"
-        echo "14) View Logs"
-        echo "15) Quit"
+    echo "8) Configure Domain / Reverse Proxy (Optional)"
+    echo "9) Configure Optimizations (Chunk Size)"
+    echo "10) Configure NOALBS Scene Switcher"
+    echo "11) Build & Start Server"
+    echo "12) Run Integration Tests"
+    echo "13) Stop Server & Uninstall"
+    echo "14) View Logs"
+    echo "15) Quit"
     echo -e "Select an option: \c"
     read -r option
 
@@ -1657,8 +1688,8 @@ while true; do
         3) configure_vertical_keys ;;
         4) configure_obs ;;
         5) configure_whitelist ;;
-        6) configure_chat ;;
-        7) configure_titles ;;
+        6) echo -e "\n${GREEN}Combined Chat Config Page URL: ${CHAT_CONFIG_URL}${NC}"; sleep 2 ;;
+        7) echo -e "\n${YELLOW}Stream Titles configuration has been removed.${NC}"; sleep 1 ;;
         8) configure_domain ;;
         9) configure_optimizations ;;
         10) configure_noalbs ;;
@@ -1666,7 +1697,7 @@ while true; do
         12) if [ -f "./integration_test.sh" ]; then chmod +x ./integration_test.sh; ./integration_test.sh; else echo -e "${RED}Test script not found.${NC}"; fi; echo -e "Press Enter to continue..."; read -r ;;
         13) stop_and_uninstall ;;
         14) view_logs ;;
-        15) clear; echo -e "${GREEN}Goodbye!${NC}"; break ;;
+        15|q|Q) clear; echo -e "${GREEN}Goodbye!${NC}"; break ;;
         *) echo -e "${RED}Invalid option${NC}"; sleep 1 ;;
     esac
 done
