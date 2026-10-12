@@ -9,6 +9,7 @@ import { SecurityAndValidatorTab } from './components/SecurityAndValidatorTab';
 import { NoalbsTab } from './components/NoalbsTab';
 import { StatsMonitorTab } from './components/StatsMonitorTab';
 import { VPSInstallerTab } from './components/VPSInstallerTab';
+import { PasswordAuthModal } from './components/PasswordAuthModal';
 
 function generateHexKey(bytes = 4): string {
   if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
@@ -23,6 +24,12 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('chat');
   const [isCyclingKey, setIsCyclingKey] = useState<boolean>(false);
   const [isLive, setIsLive] = useState<boolean>(false);
+
+  // Password Protection State
+  const [isPasswordProtected, setIsPasswordProtected] = useState<boolean>(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isVerifying, setIsVerifying] = useState<boolean>(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   // Private Hex Key for OBS Browser Source, initialized from URL pathname if an 8-char hex is present
   const [obsHexKey, setObsHexKey] = useState<string>(() => {
@@ -119,6 +126,59 @@ export const App: React.FC = () => {
       .catch(() => setIsLive(false));
   }, []);
 
+  // Check Password Protection status on load
+  useEffect(() => {
+    fetch('/api/auth/status')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.isPasswordProtected) {
+          setIsPasswordProtected(true);
+          const savedAuth = localStorage.getItem('cookiertmps_stream_key_auth');
+          if (savedAuth) {
+            // Verify saved password
+            verifyPassword(savedAuth, true);
+          } else {
+            setIsAuthenticated(false);
+          }
+        } else {
+          setIsPasswordProtected(false);
+          setIsAuthenticated(true);
+        }
+      })
+      .catch(() => {
+        setIsPasswordProtected(false);
+        setIsAuthenticated(true);
+      });
+  }, []);
+
+  const verifyPassword = async (password: string, isSilent = false) => {
+    setIsVerifying(true);
+    setAuthError(null);
+    try {
+      const resp = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        setIsAuthenticated(true);
+        localStorage.setItem('cookiertmps_stream_key_auth', password);
+      } else {
+        setIsAuthenticated(false);
+        if (!isSilent) {
+          setAuthError(data.message || 'Invalid Stream Key / Password');
+        } else {
+          localStorage.removeItem('cookiertmps_stream_key_auth');
+        }
+      }
+    } catch (e) {
+      if (!isSilent) setAuthError('Connection error verifying password');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950">
       
@@ -138,12 +198,20 @@ export const App: React.FC = () => {
       {/* Main View Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {activeTab === 'chat' && (
-          <CombinedChatTab
-            obsHexKey={obsHexKey}
-            onCycleObsKey={handleCycleObsKey}
-            platforms={platforms}
-            setPlatforms={setPlatforms}
-          />
+          isPasswordProtected && !isAuthenticated ? (
+            <PasswordAuthModal
+              onUnlock={(pass) => verifyPassword(pass, false)}
+              isLoading={isVerifying}
+              errorMsg={authError}
+            />
+          ) : (
+            <CombinedChatTab
+              obsHexKey={obsHexKey}
+              onCycleObsKey={handleCycleObsKey}
+              platforms={platforms}
+              setPlatforms={setPlatforms}
+            />
+          )
         )}
         {activeTab === 'destinations' && <DestinationsTab />}
         {activeTab === 'titles' && <TitlesAndEpisodeTab />}

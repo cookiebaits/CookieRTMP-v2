@@ -21,6 +21,7 @@ RUN mkdir -p /tmp/build/nginx && \
 # Copy RTMP module and static web assets
 COPY cookie-nginx-rtmp /tmp/build/cookie-nginx-rtmp
 COPY chat.html /tmp/build/chat.html
+COPY index.html /tmp/build/index.html
 COPY dist* /tmp/build/
 
 # Build and install Nginx
@@ -46,6 +47,7 @@ RUN cd /tmp/build/nginx/${NGINX_VERSION} && \
     make install && \
     cp /tmp/build/cookie-nginx-rtmp/stat.xsl /usr/local/nginx/html/stat.xsl && \
     cp /tmp/build/chat.html /usr/local/nginx/html/chat.html && \
+    cp /tmp/build/index.html /usr/local/nginx/html/index.html 2>/dev/null || true && \
     (cp -r /tmp/build/dist/* /usr/local/nginx/html/ 2>/dev/null || true) && \
     cp /tmp/build/nginx/${NGINX_VERSION}/conf/mime.types /etc/nginx/mime.types && \
     mkdir /var/lock/nginx && \

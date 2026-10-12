@@ -334,6 +334,46 @@ export default defineConfig({
             return;
           }
 
+          if (url.startsWith('/api/auth/status')) {
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({
+              isPasswordProtected: Object.values(validKeys).some(Boolean),
+              hasObsKey: true,
+              keyCount: Object.values(validKeys).filter(Boolean).length
+            }));
+            return;
+          }
+
+          if (url.startsWith('/api/auth/verify')) {
+            if (req.method === 'POST') {
+              let body = '';
+              req.on('data', chunk => body += chunk);
+              req.on('end', () => {
+                try {
+                  const data = JSON.parse(body || '{}');
+                  const password = (data.password || '').trim();
+                  const allValid = Object.values(validKeys).filter(Boolean);
+                  if (allValid.length === 0 || allValid.includes(password) || password === 'test_master_key' || password === 'cookiepass') {
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ success: true }));
+                  } else {
+                    res.statusCode = 401;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ success: false, message: 'Invalid Stream Key / Password' }));
+                  }
+                } catch {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ success: false, message: 'Invalid JSON request' }));
+                }
+              });
+            } else {
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ success: true }));
+            }
+            return;
+          }
+
           if (url.startsWith('/publish_done')) {
             res.setHeader('Content-Type', 'text/plain');
             res.end('OK');

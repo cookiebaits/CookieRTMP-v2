@@ -332,6 +332,33 @@ def yt_live_messages():
     except Exception as e:
         return Response(json.dumps({'status': 'error', 'videoId': video_id, 'isLive': True, 'messages': []}), mimetype='application/json')
 
+@app.route('/api/auth/status', methods=['GET'])
+def auth_status():
+    obs_key = os.getenv('OBS_KEY', '').strip()
+    is_protected = bool(obs_key or VALID_KEYS)
+    return Response(json.dumps({
+        'isPasswordProtected': is_protected,
+        'hasObsKey': bool(obs_key),
+        'keyCount': len(VALID_KEYS)
+    }), mimetype='application/json')
+
+@app.route('/api/auth/verify', methods=['POST'])
+def auth_verify():
+    import json
+    data = request.get_json(silent=True) or {}
+    password = (data.get('password') or '').strip()
+    obs_key = os.getenv('OBS_KEY', '').strip()
+    
+    # If no keys configured at all, no password required
+    if not obs_key and not VALID_KEYS:
+        return Response(json.dumps({'success': True, 'message': 'No password required'}), mimetype='application/json')
+    
+    # Check against OBS_KEY or any valid stream key in environment
+    if (obs_key and password == obs_key) or (password in VALID_KEYS):
+        return Response(json.dumps({'success': True}), mimetype='application/json')
+    
+    return Response(json.dumps({'success': False, 'message': 'Invalid Stream Key / Password'}), status=401, mimetype='application/json')
+
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=8080, debug=False)
 

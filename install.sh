@@ -777,17 +777,19 @@ configure_obs() {
     echo -e "  ${YELLOW}URL:${NC} http://${DISPLAY_HOST}/chat.html?twitch=YOUR_CHANNEL&youtube=YOUR_CHANNEL"
     echo -e "  (Replace YOUR_CHANNEL as needed)"
     echo ""
-    echo -e "--- Security Key ---"
+    echo -e "--- Security Key & Combined Chat Password ---"
     echo -e "CookieRTMPS requires a matching stream key to accept your stream."
+    echo -e "${YELLOW}Note: This Stream Key also acts as the security password to unlock the Combined Chat Config Page.${NC}"
+    echo -e "      If no stream key is set, the Combined Chat Config Page will remain open without password protection."
     echo -e "Current Custom OBS Key: ${OBS_KEY:-None}"
     echo -e "Enter new Custom OBS Key (Type 'disable' to remove, or press Enter to keep current): "
     read -r obs_input
     if [ "$obs_input" == "disable" ] || [ "$obs_input" == "DISABLE" ]; then
         OBS_KEY=""
-        echo -e "${GREEN}Custom OBS Key removed.${NC}"
+        echo -e "${GREEN}Custom OBS Key removed (Combined Chat page unlocked).${NC}"
     elif [ ! -z "$obs_input" ]; then
         OBS_KEY="$obs_input"
-        echo -e "${GREEN}Custom OBS Key updated.${NC}"
+        echo -e "${GREEN}Custom OBS Key updated (Set as password for Combined Chat page).${NC}"
     fi
 
     echo ""
@@ -1367,6 +1369,13 @@ build_and_run() {
         ensure_brb_video_transcoded "$BRB_VIDEO_URL"
     fi
 
+    echo -e "${GREEN}Building Web Dashboard static assets...${NC}"
+    if command -v npm &> /dev/null; then
+        npm run build 2>/dev/null || true
+    elif command -v bun &> /dev/null; then
+        bun run build 2>/dev/null || true
+    fi
+
     echo -e "${GREEN}Building Docker Image...${NC}"
     docker build -t cookie-rtmps .
 
@@ -1376,11 +1385,8 @@ build_and_run() {
 
     echo -e "${GREEN}Starting container...${NC}"
 
-    # Port mapping logic: Map HTTP/HTTPS only if domain is set
-    PORT_MAPS="-p ${PORT_RTMP}:1935"
-    if [ ! -z "$SERVER_DOMAIN" ]; then
-        PORT_MAPS="$PORT_MAPS -p ${PORT_HTTP}:80"
-    fi
+    # Always publish RTMP port and HTTP web server port
+    PORT_MAPS="-p ${PORT_RTMP}:1935 -p ${PORT_HTTP}:80"
 
     # Start the container
     docker run -d --name cookie-rtmps \
@@ -1453,14 +1459,25 @@ build_and_run() {
     if [ $? -eq 0 ]; then
         SERVER_IP=$(curl -4 -s ifconfig.me || echo "<your_server_ip>")
         DISPLAY_HOST=${SERVER_DOMAIN:-$SERVER_IP}
+        if [ "$PORT_HTTP" != "80" ] && [ -z "$SERVER_DOMAIN" ]; then
+            CHAT_CONFIG_URL="http://${DISPLAY_HOST}:${PORT_HTTP}/${CHAT_HEX_KEY}"
+            DASHBOARD_URL="http://${DISPLAY_HOST}:${PORT_HTTP}/"
+            STATS_URL="http://${DISPLAY_HOST}:${PORT_HTTP}/stat"
+            OBS_OVERLAY_URL="http://${DISPLAY_HOST}:${PORT_HTTP}/chat.html?key=${CHAT_HEX_KEY}&mode=unified"
+        else
+            CHAT_CONFIG_URL="http://${DISPLAY_HOST}/${CHAT_HEX_KEY}"
+            DASHBOARD_URL="http://${DISPLAY_HOST}/"
+            STATS_URL="http://${DISPLAY_HOST}/stat"
+            OBS_OVERLAY_URL="http://${DISPLAY_HOST}/chat.html?key=${CHAT_HEX_KEY}&mode=unified"
+        fi
         echo -e "${GREEN}Container 'cookie-rtmps' is running!${NC}"
         echo -e "You can stream to: rtmp://${DISPLAY_HOST}:${PORT_RTMP}/${APP_NAME}"
         echo -e "Vertical stream:  rtmp://${DISPLAY_HOST}:${PORT_RTMP}/vertical"
-        echo -e "Stats available at: http://${DISPLAY_HOST}/stat"
+        echo -e "Stats available at: ${STATS_URL}"
         echo -e "${YELLOW}Combined Chat Links:${NC}"
-        echo -e "  Combined Chat Config Page: http://${DISPLAY_HOST}/${CHAT_HEX_KEY}"
-        echo -e "  OBS Overlay (Unified):     http://${DISPLAY_HOST}/chat.html?key=${CHAT_HEX_KEY}&mode=unified"
-        echo -e "  Web Dashboard:             http://${DISPLAY_HOST}/"
+        echo -e "  Combined Chat Config Page: ${CHAT_CONFIG_URL}"
+        echo -e "  OBS Overlay (Unified):     ${OBS_OVERLAY_URL}"
+        echo -e "  Web Dashboard:             ${DASHBOARD_URL}"
 
         echo -e "${YELLOW}Resetting services and running integration tests...${NC}"
         docker restart cookie-rtmps
@@ -1640,12 +1657,24 @@ stop_and_uninstall() {
     docker builder prune -a -f 2>/dev/null || true
     docker system prune -a -f 2>/dev/null || true
 
-    echo -e "${YELLOW}Removing local configuration files and data cache...${NC}"
+    echo -e "${YELLOW}Removing local configuration files, build assets, and hosted web pages...${NC}"
     rm -f rtmp_config.env
     rm -rf ./data
-    echo -e "${GREEN}Local configuration and data removed.${NC}"
+    rm -rf ./dist
+    rm -rf ./dist-ssr
+    rm -rf ./.vite
 
-    echo -e "${GREEN}CookieRTMPS and all cached components have been completely uninstalled and all streaming ports unbound (port 80 preserved).${NC}"
+    # Clean up any static web assets hosted on local webroot directories
+    if [ -d "/usr/local/nginx/html" ]; then
+        sudo rm -rf /usr/local/nginx/html/* 2>/dev/null || rm -rf /usr/local/nginx/html/* 2>/dev/null || true
+    fi
+    if [ -d "/var/www/html" ]; then
+        sudo rm -rf /var/www/html/* 2>/dev/null || rm -rf /var/www/html/* 2>/dev/null || true
+    fi
+
+    echo -e "${GREEN}Local configuration, compiled web pages, and hosted files removed successfully.${NC}"
+
+    echo -e "${GREEN}CookieRTMPS, hosted web pages, and all cached components have been completely uninstalled and all streaming ports unbound (port 80 preserved).${NC}"
     sleep 3
 }
 
@@ -1655,30 +1684,38 @@ SERVER_IP=$(curl -4 -s ifconfig.me || echo "<your_server_ip>")
 while true; do
     clear
     DISPLAY_HOST=${SERVER_DOMAIN:-$SERVER_IP}
-    CHAT_CONFIG_URL="http://${DISPLAY_HOST}/${CHAT_HEX_KEY}"
+    if [ "$PORT_HTTP" != "80" ] && [ -z "$SERVER_DOMAIN" ]; then
+        CHAT_CONFIG_URL="http://${DISPLAY_HOST}:${PORT_HTTP}/${CHAT_HEX_KEY}"
+        DASHBOARD_URL="http://${DISPLAY_HOST}:${PORT_HTTP}/"
+        STATS_URL="http://${DISPLAY_HOST}:${PORT_HTTP}/stat"
+    else
+        CHAT_CONFIG_URL="http://${DISPLAY_HOST}/${CHAT_HEX_KEY}"
+        DASHBOARD_URL="http://${DISPLAY_HOST}/"
+        STATS_URL="http://${DISPLAY_HOST}/stat"
+    fi
     echo -e "${GREEN}=====================================${NC}"
     echo -e "${GREEN}     CookieRTMPS Quick Installer      ${NC}"
     echo -e "${GREEN}=====================================${NC}"
     echo -e "${YELLOW}Quick Reference:${NC}"
     echo -e "  RTMP Ingest:     rtmp://${DISPLAY_HOST}:${PORT_RTMP}/${APP_NAME}"
     echo -e "  Vertical Ingest: rtmp://${DISPLAY_HOST}:${PORT_RTMP}/vertical"
-    echo -e "  Stats URL:       http://${DISPLAY_HOST}/stat"
+    echo -e "  Stats URL:       ${STATS_URL}"
     echo -e "  Combined Chat Config Page: ${CHAT_CONFIG_URL}"
-    echo -e "  Web Dashboard:   http://${DISPLAY_HOST}/"
+    echo -e "  Web Dashboard:   ${DASHBOARD_URL}"
     echo "-------------------------------------"
     echo "1) Install Docker (if not installed)"
     echo "2) Configure Stream Keys (Horizontal)"
     echo "3) Configure Stream Keys (Vertical)"
     echo "4) Configure OBS Setup & Security Key"
     echo "5) Configure IP Whitelist (Optional)"
-    echo "8) Configure Domain / Reverse Proxy (Optional)"
-    echo "9) Configure Optimizations (Chunk Size)"
-    echo "10) Configure NOALBS Scene Switcher"
-    echo "11) Build & Start Server"
-    echo "12) Run Integration Tests"
-    echo "13) Stop Server & Uninstall"
-    echo "14) View Logs"
-    echo "15) Quit"
+    echo "6) Configure Domain / Reverse Proxy (Optional)"
+    echo "7) Configure Optimizations (Chunk Size)"
+    echo "8) Configure NOALBS Scene Switcher"
+    echo "9) Build & Start Server"
+    echo "10) Run Integration Tests"
+    echo "11) Stop Server & Uninstall"
+    echo "12) View Logs"
+    echo "13) Quit"
     echo -e "Select an option: \c"
     read -r option
 
@@ -1688,16 +1725,14 @@ while true; do
         3) configure_vertical_keys ;;
         4) configure_obs ;;
         5) configure_whitelist ;;
-        6) echo -e "\n${GREEN}Combined Chat Config Page URL: ${CHAT_CONFIG_URL}${NC}"; sleep 2 ;;
-        7) echo -e "\n${YELLOW}Stream Titles configuration has been removed.${NC}"; sleep 1 ;;
-        8) configure_domain ;;
-        9) configure_optimizations ;;
-        10) configure_noalbs ;;
-        11) build_and_run ;;
-        12) if [ -f "./integration_test.sh" ]; then chmod +x ./integration_test.sh; ./integration_test.sh; else echo -e "${RED}Test script not found.${NC}"; fi; echo -e "Press Enter to continue..."; read -r ;;
-        13) stop_and_uninstall ;;
-        14) view_logs ;;
-        15|q|Q) clear; echo -e "${GREEN}Goodbye!${NC}"; break ;;
+        6) configure_domain ;;
+        7) configure_optimizations ;;
+        8) configure_noalbs ;;
+        9) build_and_run ;;
+        10) if [ -f "./integration_test.sh" ]; then chmod +x ./integration_test.sh; ./integration_test.sh; else echo -e "${RED}Test script not found.${NC}"; fi; echo -e "Press Enter to continue..."; read -r ;;
+        11) stop_and_uninstall ;;
+        12) view_logs ;;
+        13|q|Q) clear; echo -e "${GREEN}Goodbye!${NC}"; break ;;
         *) echo -e "${RED}Invalid option${NC}"; sleep 1 ;;
     esac
 done
