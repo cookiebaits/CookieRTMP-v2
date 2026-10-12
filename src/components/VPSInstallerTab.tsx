@@ -5,7 +5,7 @@ export const VPSInstallerTab: React.FC = () => {
   const [copiedCmd, setCopiedCmd] = useState(false);
   const [activeFile, setActiveFile] = useState<'install' | 'stunnel' | 'nginx'>('install');
 
-  const oneLinerCmd = `git clone https://github.com/cookiebaits/cookie-rtmps.git && cd cookie-rtmps && chmod +x install.sh && ./install.sh`;
+  const oneLinerCmd = `git clone https://github.com/cookiebaits/CookieRTMP-v2.git && cd CookieRTMP-v2 && chmod +x install.sh && ./install.sh`;
 
   const handleCopyOneLiner = () => {
     navigator.clipboard.writeText(oneLinerCmd);

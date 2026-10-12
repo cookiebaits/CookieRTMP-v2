@@ -71,8 +71,8 @@ class Noalbs:
                     out_file.write(response.read())
                 logger.info(f"Downloaded video to {tmp_path}")
 
-                # Transcode and verify compatibility using FFmpeg (H.264 + AAC 48kHz stereo)
-                logger.info("Transcoding downloaded BRB video with FFmpeg to ensure AAC/H.264 compatibility...")
+                # Transcode and verify compatibility using FFmpeg with strict broadcast standards
+                logger.info("Transcoding downloaded BRB video with FFmpeg to ensure broadcast standard compatibility (H.264 High/YUV420P 60fps CBR GOP, AAC 48kHz Stereo, +faststart)...")
 
                 duration = 0.0
                 try:
@@ -86,8 +86,11 @@ class Noalbs:
                 transcode_cmd = [
                     "ffmpeg", "-y", "-hide_banner", "-loglevel", "warning",
                     "-i", tmp_path,
-                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "60",
-                    "-c:a", "aac", "-ar", "48000", "-ac", "2",
+                    "-c:v", "libx264", "-preset", "medium", "-profile:v", "high", "-level:v", "4.1", "-pix_fmt", "yuv420p",
+                    "-r", "60", "-g", "60", "-keyint_min", "60", "-sc_threshold", "0",
+                    "-b:v", "3000k", "-minrate", "3000k", "-maxrate", "3000k", "-bufsize", "3000k",
+                    "-c:a", "aac", "-ar", "48000", "-ac", "2", "-b:a", "160k",
+                    "-movflags", "+faststart",
                     "-progress", "pipe:1",
                     target_path
                 ]

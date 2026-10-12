@@ -254,7 +254,13 @@ export const CombinedChatTab: React.FC<CombinedChatTabProps> = ({
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center space-x-2">
-                  <img src={p.icon} alt={p.name} className="w-5 h-5 object-contain" />
+                  {p.icon ? (
+                    <img src={p.icon} alt={p.name} className="w-5 h-5 object-contain" />
+                  ) : (
+                    <div className="w-5 h-5 bg-slate-800 rounded flex items-center justify-center text-[10px] font-bold text-amber-400">
+                      {p.name.slice(0, 1)}
+                    </div>
+                  )}
                   <span className="text-xs font-bold text-slate-200">{p.name}</span>
                 </div>
                 <input
@@ -364,7 +370,7 @@ export const CombinedChatTab: React.FC<CombinedChatTabProps> = ({
               <span>{includeDemo ? '✓ Test Messages Active' : '+ Test Platform Logos'}</span>
             </button>
             <a
-              href={activePreviewUrl}
+              href={activePreviewUrl || undefined}
               target="_blank"
               rel="noreferrer"
               className="text-[11px] text-amber-400 hover:underline flex items-center space-x-1 font-semibold"
@@ -376,12 +382,18 @@ export const CombinedChatTab: React.FC<CombinedChatTabProps> = ({
         </div>
 
         <div className="flex-1 bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden min-h-[500px] relative">
-          <iframe
-            src={activePreviewUrl}
-            title="Combined Chat Preview"
-            className="w-full h-full min-h-[500px] border-none"
-            allow="autoplay; fullscreen"
-          />
+          {activePreviewUrl ? (
+            <iframe
+              src={activePreviewUrl}
+              title="Combined Chat Preview"
+              className="w-full h-full min-h-[500px] border-none"
+              allow="autoplay; fullscreen"
+            />
+          ) : (
+            <div className="w-full h-full min-h-[500px] flex items-center justify-center text-slate-500 text-xs font-mono">
+              Loading Chat Preview...
+            </div>
+          )}
         </div>
       </div>
 

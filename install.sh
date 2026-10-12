@@ -8,6 +8,72 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Upgrade / Overwrite Detection: Check if an existing CookieRTMPS instance or clone exists
+handle_existing_instance_upgrade() {
+    local HAS_OLD_CONTAINER=0
+    local HAS_OLD_CONFIG=0
+
+    if command -v docker &> /dev/null; then
+        local RUNNING_CONTAINER
+        RUNNING_CONTAINER=$(docker ps -q --filter "name=cookie-rtmps" 2>/dev/null || true)
+        if [ -n "$RUNNING_CONTAINER" ]; then
+            HAS_OLD_CONTAINER=1
+        fi
+        if [ $HAS_OLD_CONTAINER -eq 0 ]; then
+            local ANY_COOKIE_CONTAINER
+            ANY_COOKIE_CONTAINER=$(docker ps -a --format '{{.Names}}' | grep -iE 'cookie-rtmps|cookie_rtmp' || true)
+            if [ -n "$ANY_COOKIE_CONTAINER" ]; then
+                HAS_OLD_CONTAINER=1
+            fi
+        fi
+    fi
+
+    # Check parent directory or common clone paths (/root/CookieRTMP-v2, /root/cookie-rtmps, ./rtmp_config.env)
+    if [ -f "rtmp_config.env" ] || [ -f "../rtmp_config.env" ] || [ -d "../CookieRTMP-v2/data" ] || [ -d "../cookie-rtmps/data" ]; then
+        HAS_OLD_CONFIG=1
+    fi
+
+    if [ $HAS_OLD_CONTAINER -eq 1 ] || [ $HAS_OLD_CONFIG -eq 1 ]; then
+        echo -e "${YELLOW}=====================================================${NC}"
+        echo -e "${YELLOW}  Existing CookieRTMPS instance detected!           ${NC}"
+        echo -e "${YELLOW}  Gracefully stopping service & preparing update...  ${NC}"
+        echo -e "${YELLOW}=====================================================${NC}"
+
+        if command -v docker &> /dev/null; then
+            echo -e "${YELLOW}Stopping active container(s) to allow seamless overwrite...${NC}"
+            docker stop cookie-rtmps 2>/dev/null || true
+            docker rm cookie-rtmps 2>/dev/null || true
+            local OLD_ALL
+            OLD_ALL=$(docker ps -q --filter "name=cookie" 2>/dev/null || true)
+            if [ -n "$OLD_ALL" ]; then
+                docker stop $OLD_ALL 2>/dev/null || true
+                docker rm $OLD_ALL 2>/dev/null || true
+            fi
+        fi
+
+        # If previous configuration file exists in an adjacent folder or backup, preserve it
+        if [ ! -f "rtmp_config.env" ] && [ -f "../rtmp_config.env" ]; then
+            echo -e "${GREEN}Restoring configuration from previous instance...${NC}"
+            cp "../rtmp_config.env" "./rtmp_config.env" 2>/dev/null || true
+        elif [ ! -f "rtmp_config.env" ] && [ -f "../cookie-rtmps/rtmp_config.env" ]; then
+            echo -e "${GREEN}Restoring configuration from ../cookie-rtmps/rtmp_config.env...${NC}"
+            cp "../cookie-rtmps/rtmp_config.env" "./rtmp_config.env" 2>/dev/null || true
+        fi
+
+        # Preserve data volume (keys, brb_video.mp4, etc.) if available in older directory
+        if [ ! -d "./data" ] && [ -d "../cookie-rtmps/data" ]; then
+            mkdir -p ./data
+            cp -r ../cookie-rtmps/data/* ./data/ 2>/dev/null || true
+        fi
+
+        echo -e "${GREEN}Old instance stopped. Existing configuration preserved.${NC}"
+        echo -e "${GREEN}Loading CookieRTMPS install menu to review updates and redeploy...${NC}\n"
+        sleep 2
+    fi
+}
+
+handle_existing_instance_upgrade
+
 # Default values
 YOUTUBE_URL="rtmp://a.rtmp.youtube.com/live2/"
 YOUTUBE_KEY=""
@@ -1005,18 +1071,28 @@ configure_chat() {
 }
 
 ensure_brb_video_transcoded() {
-    local url="${1:-$BRB_VIDEO_URL}"
+    local source_input="${1:-$BRB_VIDEO_URL}"
     local target="./data/brb_video.mp4"
-    if [ -z "$url" ]; then
-        url="https://filedn.com/lfh40bKbFfD5um9HDFNrJFR/brb.mp4"
+    if [ -z "$source_input" ]; then
+        source_input="https://filedn.com/lfh40bKbFfD5um9HDFNrJFR/brb.mp4"
     fi
     mkdir -p ./data
     rm -f "$target"
-    echo -e "${YELLOW}Downloading BRB video from $url ...${NC}"
-    curl -L "$url" -o "${target}.tmp"
+
+    if [[ "$source_input" =~ ^https?:// ]] || [[ "$source_input" =~ ^ftp:// ]]; then
+        echo -e "${YELLOW}Downloading NOALBS Scene Switcher MP4 from: $source_input ...${NC}"
+        curl -L -f --retry 3 --connect-timeout 15 "$source_input" -o "${target}.tmp"
+    elif [ -f "$source_input" ]; then
+        echo -e "${YELLOW}Using local MP4 source file: $source_input ...${NC}"
+        cp "$source_input" "${target}.tmp"
+    else
+        echo -e "${RED}Invalid video source or file not found: $source_input${NC}"
+        return 1
+    fi
+
     if [ -f "${target}.tmp" ] && [ -s "${target}.tmp" ]; then
         if command -v ffmpeg &> /dev/null; then
-            echo -e "${YELLOW}Transcoding BRB video with FFmpeg to ensure AAC audio and H.264 video compatibility...${NC}"
+            echo -e "${YELLOW}Transcoding MP4 for NOALBS broadcast standard (H.264 Main/High, YUV420P, 60fps CBR GOP, AAC 48kHz Stereo, +faststart)...${NC}"
 
             local duration=""
             if command -v ffprobe &> /dev/null; then
@@ -1030,7 +1106,19 @@ ensure_brb_video_transcoded() {
                 fi
             fi
 
-            ffmpeg -y -hide_banner -loglevel warning -i "${target}.tmp" -c:v libx264 -pix_fmt yuv420p -g 60 -c:a aac -ar 48000 -ac 2 -progress pipe:1 "$target" 2>/dev/null | while read -r line; do
+            # Strict broadcast formatting:
+            # - Profile High, Level 4.1, yuv420p
+            # - Fixed 60fps frame rate (-r 60) with closed GOP every 1-2 sec (-g 60 -keyint_min 60 -sc_threshold 0)
+            # - Strict Constant Bitrate (CBR) targeting 3000k (-b:v 3000k -minrate 3000k -maxrate 3000k -bufsize 3000k)
+            # - Broadcast audio: AAC-LC, 48000 Hz, 2 channels (stereo), 160 kbps
+            # - MP4 container flags: +faststart for instant playback and looping
+            ffmpeg -y -hide_banner -loglevel warning -i "${target}.tmp" \
+                -c:v libx264 -preset medium -profile:v high -level:v 4.1 -pix_fmt yuv420p \
+                -r 60 -g 60 -keyint_min 60 -sc_threshold 0 \
+                -b:v 3000k -minrate 3000k -maxrate 3000k -bufsize 3000k \
+                -c:a aac -ar 48000 -ac 2 -b:a 160k \
+                -movflags +faststart \
+                -progress pipe:1 "$target" 2>/dev/null | while read -r line; do
                 if [[ "$line" == out_time_us=* ]]; then
                     local us="${line#*=}"
                     if [[ "$us" =~ ^[0-9]+$ ]] && [ -n "$duration" ]; then
@@ -1045,25 +1133,27 @@ ensure_brb_video_transcoded() {
                             bar="${bar}>"
                             for ((i=1; i<unfilled; i++)); do bar="${bar} "; done
                         fi
-                        printf "\rTranscoding BRB Video: [%s] %s%%" "$bar" "$pct"
+                        printf "\rFormatting NOALBS MP4: [%s] %s%%" "$bar" "$pct"
                     fi
                 fi
             done
             echo ""
 
             if [ -f "$target" ] && [ -s "$target" ]; then
-                echo -e "${GREEN}BRB video successfully downloaded and transcoded.${NC}"
+                echo -e "${GREEN}NOALBS Scene Switcher MP4 successfully formatted and ready for seamless broadcast looping.${NC}"
                 rm -f "${target}.tmp"
             else
-                echo -e "${YELLOW}FFmpeg transcode warning. Using downloaded file directly.${NC}"
+                echo -e "${YELLOW}FFmpeg transcode notice. Using original file as fallback.${NC}"
                 mv "${target}.tmp" "$target"
             fi
         else
+            echo -e "${YELLOW}FFmpeg not found on host. Saving source file for container internal formatting.${NC}"
             mv "${target}.tmp" "$target"
         fi
     else
-        echo -e "${RED}Download failed.${NC}"
+        echo -e "${RED}Video download or retrieval failed. Please check the URL or file path.${NC}"
         rm -f "${target}.tmp"
+        return 1
     fi
 }
 
