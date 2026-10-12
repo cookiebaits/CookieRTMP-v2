@@ -43,7 +43,7 @@ You'd need a VPS server. Key considerations:
 
 *   2- **Clone, Set permissions, & Run the Repository:**
     ```bash
-    git clone https://github.com/cookiebaits/CookieRTMP-v2.git && cd cookie-rtmps && chmod +x install.sh && ./install.sh
+    git clone https://github.com/cookiebaits/CookieRTMP-v2.git && cd CookieRTMP-v2 && chmod +x install.sh && ./install.sh
     ```
     *   Use the menu to easily install Docker (if needed).
     *   Configure your stream keys and set any desired optimizations (like NGINX `chunk_size`).
