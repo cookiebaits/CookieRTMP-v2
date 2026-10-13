@@ -5,7 +5,7 @@ export const VPSInstallerTab: React.FC = () => {
   const [copiedCmd, setCopiedCmd] = useState(false);
   const [activeFile, setActiveFile] = useState<'install' | 'stunnel' | 'nginx'>('install');
 
-  const oneLinerCmd = `git clone https://github.com/cookiebaits/CookieRTMP-v2.git && cd CookieRTMP-v2 && chmod +x install.sh && ./install.sh`;
+  const oneLinerCmd = `if [ -f "./install.sh" ]; then (git pull 2>/dev/null || true); elif [ -d "CookieRTMP-v2" ]; then cd CookieRTMP-v2 && (git pull 2>/dev/null || true); else git clone https://github.com/cookiebaits/CookieRTMP-v2.git && cd CookieRTMP-v2; fi && chmod +x install.sh && ./install.sh`;
 
   const handleCopyOneLiner = () => {
     navigator.clipboard.writeText(oneLinerCmd);
@@ -47,7 +47,7 @@ connect = va.pscp.tv:443`;
             <span>VPS Deployment Assistant & Stunnel RTMPS Proxies</span>
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Deploy CookieRTMPS on any Linux VPS with one interactive command. Stunnel proxies handle SSL/TLS encapsulation for YouTube, Kick, Facebook, and Instagram.
+            Universal one-step command: works for fresh installations, existing directories, and version upgrades without errors.
           </p>
         </div>
 
@@ -62,13 +62,21 @@ connect = va.pscp.tv:443`;
 
       {/* Installer Script Banner */}
       <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-2">
-        <span className="text-xs font-semibold text-slate-300 flex items-center space-x-2">
-          <Terminal className="w-4 h-4 text-emerald-400" />
-          <span>One-Line VPS Deployment Command</span>
-        </span>
-        <pre className="bg-slate-900 p-3 rounded-xl border border-slate-800 font-mono text-xs text-amber-300 font-semibold overflow-x-auto">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-slate-300 flex items-center space-x-2">
+            <Terminal className="w-4 h-4 text-emerald-400" />
+            <span>Universal One-Step Deployment & Upgrade Command</span>
+          </span>
+          <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-mono">
+            Auto-handles existing directory & updates
+          </span>
+        </div>
+        <pre className="bg-slate-900 p-3 rounded-xl border border-slate-800 font-mono text-xs text-amber-300 font-semibold overflow-x-auto whitespace-pre-wrap break-all">
           {oneLinerCmd}
         </pre>
+        <p className="text-[11px] text-slate-400">
+          Paste into your terminal. If <code className="text-amber-400">CookieRTMP-v2</code> already exists, it updates without directory collision errors, stops any active old container, preserves your configuration, and opens the setup menu.
+        </p>
       </div>
 
       {/* File Inspector Tabs */}
@@ -80,7 +88,7 @@ connect = va.pscp.tv:443`;
               activeFile === 'install' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            install.sh Flow
+            install.sh Flow (12 Steps)
           </button>
           <button
             onClick={() => setActiveFile('stunnel')}
@@ -95,16 +103,20 @@ connect = va.pscp.tv:443`;
         <div>
           {activeFile === 'install' && (
             <div className="space-y-3 text-xs text-slate-300">
-              <p className="font-semibold text-amber-400">Interactive Menu Menu Options provided in <code className="font-mono">install.sh</code>:</p>
-              <ol className="list-decimal list-inside space-y-1.5 font-mono text-[11px] text-slate-300">
+              <p className="font-semibold text-amber-400">Sequential Menu Options in <code className="font-mono">install.sh</code>:</p>
+              <ol className="list-decimal list-inside space-y-1 font-mono text-[11px] text-slate-300">
                 <li>Install Docker & Dependencies</li>
-                <li>Configure Horizontal Stream Keys (Twitch, YT, Kick, TikTok, X, Trovo)</li>
-                <li>Configure Vertical Stream Keys (Aitum Vertical Targets)</li>
-                <li>Set Custom Master OBS Key</li>
-                <li>Set Domain & SSL Certificate</li>
-                <li>Configure Nginx <code className="text-amber-300">chunk_size</code> (Default: 8192)</li>
-                <li>Set IP Whitelist (<code className="text-amber-300">ACCEPTED_IP</code>)</li>
-                <li>Build & Start CookieRTMPS Docker Relay Container</li>
+                <li>Configure Horizontal (Main) Stream Destinations</li>
+                <li>Configure Vertical Stream Destinations</li>
+                <li>Configure OBS Setup & Ingest Security (Stream Key Password)</li>
+                <li>Configure Server Performance & Chunk Size</li>
+                <li>Configure Network & IP Whitelist</li>
+                <li>Configure Titles & Chat Credentials (Twitch/YouTube OAuth)</li>
+                <li>Configure Domain / Reverse Proxy</li>
+                <li>Configure RTMPS Stunnel Proxy Ports</li>
+                <li>Configure NOALBS Scene Switcher (Cloud MP4 Looping Failover)</li>
+                <li>Build & Start Server</li>
+                <li>Stop Server & Complete Clean Uninstall</li>
               </ol>
             </div>
           )}

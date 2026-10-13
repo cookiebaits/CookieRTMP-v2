@@ -119,6 +119,21 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    fetch('/api/chat_hex_key')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.hexKey && /^[0-9a-fA-F]{8}$/.test(data.hexKey)) {
+          const path = window.location.pathname.replace(/^\/+|\/+$/g, '');
+          if (!/^[0-9a-fA-F]{8}$/.test(path)) {
+            setObsHexKey(data.hexKey);
+            localStorage.setItem('cookiertmps_obs_hex_key', data.hexKey);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     fetch('/health')
       .then((res) => {
         if (res.ok) setIsLive(true);

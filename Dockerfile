@@ -5,7 +5,7 @@ ENV NGINX_VERSION=nginx-1.30.3
 ENV NGINX_RTMP_MODULE_VERSION=cookie-nginx-rtmp
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3 python3-pip && \
+    apt-get install -y --no-install-recommends python3 python3-pip nodejs npm && \
     pip3 install --break-system-packages flask gunicorn requests obsws-python flask-session twitchio google-api-python-client eventlet flask-socketio edge-tts && \
     apt-get install -y --no-install-recommends ca-certificates openssl libssl-dev stunnel4 gettext certbot ffmpeg && \
     apt-get clean && \
@@ -18,15 +18,24 @@ RUN mkdir -p /tmp/build/nginx && \
     wget -O ${NGINX_VERSION}.tar.gz https://nginx.org/download/${NGINX_VERSION}.tar.gz && \
     tar -zxf ${NGINX_VERSION}.tar.gz
 
-# Copy RTMP module and static web assets
+# Copy RTMP module, static web assets, and source code for self-contained build
 COPY cookie-nginx-rtmp /tmp/build/cookie-nginx-rtmp
 COPY chat.html /tmp/build/chat.html
 COPY index.html /tmp/build/index.html
-COPY dist* /tmp/build/
+COPY package.json /tmp/build/
+COPY tsconfig.json /tmp/build/
+COPY vite.config.ts /tmp/build/
+COPY src /tmp/build/src
+
+# Build Frontend Web App and Nginx inside Docker container
+RUN cd /tmp/build && \
+    npm install && \
+    npm run build && \
+    mkdir -p /usr/local/nginx/html && \
+    cp -r dist/* /usr/local/nginx/html/ && \
+    cp chat.html /usr/local/nginx/html/chat.html
 
 # Build and install Nginx
-# The default puts everything under /usr/local/nginx, so it's needed to change
-# it explicitly. Not just for order but to have it in the PATH
 RUN cd /tmp/build/nginx/${NGINX_VERSION} && \
     ./configure \
         --sbin-path=/usr/local/sbin/nginx \
@@ -46,9 +55,6 @@ RUN cd /tmp/build/nginx/${NGINX_VERSION} && \
     make -j $(getconf _NPROCESSORS_ONLN) CFLAGS="-Wno-error" && \
     make install && \
     cp /tmp/build/cookie-nginx-rtmp/stat.xsl /usr/local/nginx/html/stat.xsl && \
-    cp /tmp/build/chat.html /usr/local/nginx/html/chat.html && \
-    cp /tmp/build/index.html /usr/local/nginx/html/index.html 2>/dev/null || true && \
-    (cp -r /tmp/build/dist/* /usr/local/nginx/html/ 2>/dev/null || true) && \
     cp /tmp/build/nginx/${NGINX_VERSION}/conf/mime.types /etc/nginx/mime.types && \
     mkdir /var/lock/nginx && \
     rm -rf /tmp/build
@@ -69,23 +75,18 @@ COPY noalbs /app/noalbs
 
 # Config Stunnel
 RUN mkdir -p  /etc/stunnel/conf.d
-# Set up config file 
 COPY stunnel/stunnel.conf /etc/stunnel/stunnel.conf
 COPY stunnel/stunnel4 /etc/default/stunnel4
 
-#Facebook Stunnel Port 19350
+# Facebook Stunnel Port 19350
 COPY stunnel/facebook.conf /etc/stunnel/conf.d/facebook.conf
-
-#Instagram Stunnel Port 19351
+# Instagram Stunnel Port 19351
 COPY stunnel/instagram.conf /etc/stunnel/conf.d/instagram.conf
-
-#Tiktok Stunnel Port 19358
+# Tiktok Stunnel Port 19358
 COPY stunnel/tiktok.conf /etc/stunnel/conf.d/tiktok.conf
-
-#Kick Stunnel Port 19356
+# Kick Stunnel Port 19356
 COPY stunnel/kick.conf /etc/stunnel/conf.d/kick.conf
-
-#X Stunnel Port 19354
+# X Stunnel Port 19354
 COPY stunnel/x.conf /etc/stunnel/conf.d/x.conf
 
 RUN apt-get update && apt-get upgrade -y && apt-get clean && rm -rf /var/lib/apt/lists/*

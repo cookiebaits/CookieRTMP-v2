@@ -127,10 +127,20 @@ def validate():
     parsed_data = parse_qs(raw_data)
     stream_key_attempt = parsed_data.get('name', [''])[0]
 
-    # Cloudflare Real IP or fallback
-    client_ip = request.headers.get('CF-Connecting-IP', request.remote_addr)
-    if not client_ip or client_ip == '127.0.0.1':
-        client_ip = parsed_data.get('addr', [request.remote_addr])[0]
+    # Robust client IP extraction for WireGuard, VPN, and proxy setups
+    client_ip = (
+        request.form.get('addr') or
+        request.args.get('addr') or
+        (parsed_data.get('addr') and parsed_data.get('addr')[0]) or
+        request.headers.get('CF-Connecting-IP') or
+        request.headers.get('X-Real-IP') or
+        request.headers.get('X-Forwarded-For') or
+        request.remote_addr
+    )
+    if client_ip and ',' in client_ip:
+        client_ip = client_ip.split(',')[0].strip()
+    if not client_ip:
+        client_ip = '127.0.0.1'
 
     # Key Check - Internal Cloud BRB stream is always allowed
     if stream_key_attempt.startswith('cloud_brb'):
@@ -331,6 +341,19 @@ def yt_live_messages():
             return Response(json.dumps({'status': 'ok', 'videoId': video_id, 'isLive': True, 'messages': messages[-25:]}), mimetype='application/json')
     except Exception as e:
         return Response(json.dumps({'status': 'error', 'videoId': video_id, 'isLive': True, 'messages': []}), mimetype='application/json')
+
+@app.route('/api/chat_hex_key', methods=['GET'])
+def get_chat_hex_key():
+    key = os.getenv('CHAT_HEX_KEY', '')
+    if not key:
+        try:
+            with open('/app/data/chat_hex_key.txt', 'r') as f:
+                key = f.read().strip()
+        except Exception:
+            pass
+    if not key:
+        key = 'c00k1e88'
+    return Response(json.dumps({'hexKey': key}), mimetype='application/json')
 
 @app.route('/api/auth/status', methods=['GET'])
 def auth_status():

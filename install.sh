@@ -2,6 +2,10 @@
 # install.sh - Menu style configuration and installation for CookieRTMPS
 # Ensure script is run with bash
 
+# Always operate from the script's directory regardless of invocation path
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -10,48 +14,19 @@ NC='\033[0m' # No Color
 
 # Upgrade / Overwrite Detection: Check if an existing CookieRTMPS instance or clone exists
 handle_existing_instance_upgrade() {
-    local HAS_OLD_CONTAINER=0
     local HAS_OLD_CONFIG=0
-
-    if command -v docker &> /dev/null; then
-        local RUNNING_CONTAINER
-        RUNNING_CONTAINER=$(docker ps -q --filter "name=cookie-rtmps" 2>/dev/null || true)
-        if [ -n "$RUNNING_CONTAINER" ]; then
-            HAS_OLD_CONTAINER=1
-        fi
-        if [ $HAS_OLD_CONTAINER -eq 0 ]; then
-            local ANY_COOKIE_CONTAINER
-            ANY_COOKIE_CONTAINER=$(docker ps -a --format '{{.Names}}' | grep -iE 'cookie-rtmps|cookie_rtmp' || true)
-            if [ -n "$ANY_COOKIE_CONTAINER" ]; then
-                HAS_OLD_CONTAINER=1
-            fi
-        fi
-    fi
 
     # Check parent directory or common clone paths (/root/CookieRTMP-v2, /root/cookie-rtmps, ./rtmp_config.env)
     if [ -f "rtmp_config.env" ] || [ -f "../rtmp_config.env" ] || [ -d "../CookieRTMP-v2/data" ] || [ -d "../cookie-rtmps/data" ]; then
         HAS_OLD_CONFIG=1
     fi
 
-    if [ $HAS_OLD_CONTAINER -eq 1 ] || [ $HAS_OLD_CONFIG -eq 1 ]; then
+    if [ $HAS_OLD_CONFIG -eq 1 ]; then
         echo -e "${YELLOW}=====================================================${NC}"
-        echo -e "${YELLOW}  Existing CookieRTMPS instance detected!           ${NC}"
-        echo -e "${YELLOW}  Gracefully stopping service & preparing update...  ${NC}"
+        echo -e "${YELLOW}  Checking for file updates & existing configuration...${NC}"
         echo -e "${YELLOW}=====================================================${NC}"
 
-        if command -v docker &> /dev/null; then
-            echo -e "${YELLOW}Stopping active container(s) to allow seamless overwrite...${NC}"
-            docker stop cookie-rtmps 2>/dev/null || true
-            docker rm cookie-rtmps 2>/dev/null || true
-            local OLD_ALL
-            OLD_ALL=$(docker ps -q --filter "name=cookie" 2>/dev/null || true)
-            if [ -n "$OLD_ALL" ]; then
-                docker stop $OLD_ALL 2>/dev/null || true
-                docker rm $OLD_ALL 2>/dev/null || true
-            fi
-        fi
-
-        # If previous configuration file exists in an adjacent folder or backup, preserve it
+        # If previous configuration file exists in an adjacent folder or backup, restore/update it
         if [ ! -f "rtmp_config.env" ] && [ -f "../rtmp_config.env" ]; then
             echo -e "${GREEN}Restoring configuration from previous instance...${NC}"
             cp "../rtmp_config.env" "./rtmp_config.env" 2>/dev/null || true
@@ -60,15 +35,27 @@ handle_existing_instance_upgrade() {
             cp "../cookie-rtmps/rtmp_config.env" "./rtmp_config.env" 2>/dev/null || true
         fi
 
+        # Check and replace any newer files from adjacent directories if present
+        if [ -d "../CookieRTMP-v2" ] && [ "../CookieRTMP-v2" != "$PWD" ]; then
+            echo -e "${GREEN}Checking for newer files and replacing updates...${NC}"
+            cp -ru ../CookieRTMP-v2/* . 2>/dev/null || true
+        elif [ -d "../cookie-rtmps" ] && [ "../cookie-rtmps" != "$PWD" ]; then
+            echo -e "${GREEN}Checking for newer files and replacing updates...${NC}"
+            cp -ru ../cookie-rtmps/* . 2>/dev/null || true
+        fi
+
         # Preserve data volume (keys, brb_video.mp4, etc.) if available in older directory
         if [ ! -d "./data" ] && [ -d "../cookie-rtmps/data" ]; then
             mkdir -p ./data
             cp -r ../cookie-rtmps/data/* ./data/ 2>/dev/null || true
+        elif [ ! -d "./data" ] && [ -d "../CookieRTMP-v2/data" ]; then
+            mkdir -p ./data
+            cp -r ../CookieRTMP-v2/data/* ./data/ 2>/dev/null || true
         fi
 
-        echo -e "${GREEN}Old instance stopped. Existing configuration preserved.${NC}"
-        echo -e "${GREEN}Loading CookieRTMPS install menu to review updates and redeploy...${NC}\n"
-        sleep 2
+        echo -e "${GREEN}File check complete. Running streaming instances are left untouched.${NC}"
+        echo -e "${GREEN}Loading CookieRTMPS install menu...${NC}\n"
+        sleep 1
     fi
 }
 
@@ -920,11 +907,20 @@ configure_whitelist() {
         case $wl_opt in
             1)
                 SERVER_IP_FETCH=$(curl -4 -s ifconfig.me || echo "")
-                if [ ! -z "$SERVER_IP_FETCH" ]; then
-                    ACCEPTED_IP="$SERVER_IP_FETCH"
-                    echo -e "${GREEN}IP Whitelist updated to server IP: $ACCEPTED_IP${NC}"
+                LOCAL_IPS=$(hostname -I 2>/dev/null || ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || echo "")
+                
+                WHITELIST_ITEMS="${SERVER_IP_FETCH}, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.1"
+                for lip in $LOCAL_IPS; do
+                    if [ "$lip" != "127.0.0.1" ]; then
+                        WHITELIST_ITEMS="${WHITELIST_ITEMS}, ${lip}"
+                    fi
+                done
+                ACCEPTED_IP=$(echo "$WHITELIST_ITEMS" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | sort -u | tr '\n' ',' | sed 's/,$//')
+                
+                if [ ! -z "$ACCEPTED_IP" ]; then
+                    echo -e "${GREEN}IP Whitelist updated to server IP & WireGuard/VPN subnets: $ACCEPTED_IP${NC}"
                 else
-                    echo -e "${RED}Failed to fetch server IP.${NC}"
+                    echo -e "${RED}Failed to configure whitelist IPs.${NC}"
                 fi
                 save_config
                 sleep 2
