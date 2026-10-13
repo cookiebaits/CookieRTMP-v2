@@ -35,7 +35,7 @@ export const App: React.FC = () => {
   const [obsHexKey, setObsHexKey] = useState<string>(() => {
     try {
       const path = window.location.pathname.replace(/^\/+|\/+$/g, '');
-      if (/^[0-9a-fA-F]{8}$/.test(path)) {
+      if (/^[0-9a-zA-Z]{8}$/.test(path)) {
         localStorage.setItem('cookiertmps_obs_hex_key', path);
         return path;
       }
@@ -112,7 +112,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     const path = window.location.pathname.replace(/^\/+|\/+$/g, '');
-    if (/^[0-9a-fA-F]{8}$/.test(path)) {
+    if (/^[0-9a-zA-Z]{8}$/.test(path)) {
       setObsHexKey(path);
       setActiveTab('chat');
     }
@@ -122,9 +122,9 @@ export const App: React.FC = () => {
     fetch('/api/chat_hex_key')
       .then((res) => res.json())
       .then((data) => {
-        if (data && data.hexKey && /^[0-9a-fA-F]{8}$/.test(data.hexKey)) {
+        if (data && data.hexKey && /^[0-9a-zA-Z]{8}$/.test(data.hexKey)) {
           const path = window.location.pathname.replace(/^\/+|\/+$/g, '');
-          if (!/^[0-9a-fA-F]{8}$/.test(path)) {
+          if (!/^[0-9a-zA-Z]{8}$/.test(path)) {
             setObsHexKey(data.hexKey);
             localStorage.setItem('cookiertmps_obs_hex_key', data.hexKey);
           }

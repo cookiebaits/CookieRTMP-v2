@@ -1471,8 +1471,8 @@ build_and_run() {
 
     echo -e "${GREEN}Starting container...${NC}"
 
-    # Always publish RTMP port and HTTP web server port
-    PORT_MAPS="-p ${PORT_RTMP}:1935 -p ${PORT_HTTP}:80"
+    # Always publish RTMP port, HTTP web server port, and HTTPS port (for Cloudflare / SSL)
+    PORT_MAPS="-p ${PORT_RTMP}:1935 -p ${PORT_HTTP}:80 -p 443:8443"
 
     # Start the container
     docker run -d --name cookie-rtmps \
@@ -1518,6 +1518,11 @@ build_and_run() {
         -e V_RTMP1_URL="$V_RTMP1_URL" \
         -e V_RTMP1_KEY="$V_RTMP1_KEY" \
         -e OBS_KEY="$OBS_KEY" \
+        -e CHAT_HEX_KEY="$CHAT_HEX_KEY" \
+        -e CHAT_TWITCH="$CHAT_TWITCH" \
+        -e CHAT_YOUTUBE="$CHAT_YOUTUBE" \
+        -e CHAT_KICK="$CHAT_KICK" \
+        -e CHAT_TIKTOK="$CHAT_TIKTOK" \
         -e APP_NAME="$APP_NAME" \
         -e ACCEPTED_IP="$ACCEPTED_IP" \
         -e CHUNK_SIZE="$CHUNK_SIZE" \
