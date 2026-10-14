@@ -1,7 +1,7 @@
 # CookieRTMPS v2: Secure, Self-Hosted Multistreaming & Cloud Failover Solution
 
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?logo=discord&logoColor=white)](http://wubu.cookiebaits.com)
-[![Version](https://img.shields.io/badge/Version-v2.0-blue.svg)](https://github.com/cookiebaits/CookieRTMP-v2)
+[![Version](https://img.shields.io/badge/Version-v2.0-blue.svg)](https://github.com/cookiebaits/cookiertmps-v2)
 [![Nginx](https://img.shields.io/badge/Nginx-1.30.3-brightgreen.svg)](https://nginx.org)
 [![Enhanced%20RTMP](https://img.shields.io/badge/Enhanced%20RTMP-HEVC%20%7C%20AV1%20%7C%20VP9-orange.svg)](#enhanced-codecs)
 
@@ -9,7 +9,7 @@
 
 ## Project Overview
 
-**CookieRTMPS v2** (`cookiebaits/CookieRTMP-v2`) is a standalone, enterprise-grade, self-hosted RTMP/RTMPS relay engine designed for content creators and streamers. It enables simultaneous multistreaming across Twitch, YouTube, Kick, TikTok, Facebook, Trovo, Instagram, X (Twitter), and custom RTMP endpoints—**without putting upload strain on your local connection or paying recurring fees to commercial cloud restreamers.**
+**CookieRTMPS v2** (`cookiebaits/cookiertmps-v2`) is a standalone, enterprise-grade, self-hosted RTMP/RTMPS relay engine designed for content creators and streamers. It enables simultaneous multistreaming across Twitch, YouTube, Kick, TikTok, Facebook, Trovo, Instagram, X (Twitter), and custom RTMP endpoints—**without putting upload strain on your local connection or paying recurring fees to commercial cloud restreamers.**
 
 You send **one** high-quality feed to your VPS, and CookieRTMPS handles validation, hardware/network proxying, vertical aspect ratio mirroring, chat aggregation, and automated failover.
 
@@ -81,11 +81,11 @@ ssh root@<your_server_ip>
 
 ### 2. Universal One-Step Deployment & Upgrade Command
 ```bash
-if [ -f "./install.sh" ]; then (git pull 2>/dev/null || true); elif [ -d "CookieRTMP-v2" ]; then cd CookieRTMP-v2 && (git pull 2>/dev/null || true); else git clone https://github.com/cookiebaits/cookiertmps-v2.git && cd cookiertmps-v2; fi && chmod +x install.sh && ./install.sh
+if [ -f "./install.sh" ]; then (git pull 2>/dev/null || true); elif [ -d "cookiertmps-v2" ]; then cd cookiertmps-v2 && (git pull 2>/dev/null || true); else git clone https://github.com/cookiebaits/cookiertmps-v2.git && cd cookiertmps-v2; fi && chmod +x install.sh && ./install.sh
 ```
 
 > **Automatic Directory & File Handling:**
-> - **Existing Directory?** If `CookieRTMP-v2` is already on your server, it pulls updates cleanly without throwing `fatal: destination path already exists`.
+> - **Existing Directory?** If `cookiertmps-v2` is already on your server, it pulls updates cleanly without throwing `fatal: destination path already exists`.
 > - **Already Inside Repo?** Automatically detects current directory and executes the installer.
 > - **Running Instances?** Running streaming containers (`cookie-rtmps`) are left **untouched and running** when starting `install.sh`. It automatically checks for newer files/updates, replaces them, preserves configuration and data, and only stops/rebuilds the container when you explicitly choose Option 9 ("Build & Start Server").
 
@@ -184,7 +184,7 @@ This guarantees seamless platform acceptance with zero stream tearing or reconne
 
 ## Support & Community
 
-* **Report Issues:** [GitHub Issues](https://github.com/cookiebaits/CookieRTMP-v2/issues)
+* **Report Issues:** [GitHub Issues](https://github.com/cookiebaits/cookiertmps-v2/issues)
 * **Discord Server:** [Cookiebaits Discord](http://wubu.cookiebaits.com)
 
 ---
