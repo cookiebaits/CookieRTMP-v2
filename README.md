@@ -81,7 +81,7 @@ ssh root@<your_server_ip>
 
 ### 2. Universal One-Step Deployment & Upgrade Command
 ```bash
-if [ -f "./install.sh" ]; then (git pull 2>/dev/null || true); elif [ -d "CookieRTMP-v2" ]; then cd CookieRTMP-v2 && (git pull 2>/dev/null || true); else git clone https://github.com/cookiebaits/CookieRTMP-v2.git && cd CookieRTMP-v2; fi && chmod +x install.sh && ./install.sh
+if [ -f "./install.sh" ]; then (git pull 2>/dev/null || true); elif [ -d "CookieRTMP-v2" ]; then cd CookieRTMP-v2 && (git pull 2>/dev/null || true); else git clone https://github.com/cookiebaits/cookiertmps-v2.git && cd cookiertmps-v2; fi && chmod +x install.sh && ./install.sh
 ```
 
 > **Automatic Directory & File Handling:**
