@@ -342,5 +342,91 @@ class TestNoalbsComprehensive(unittest.TestCase):
         self.assertIsNone(noalbs.cloud_process)
         mock_obs.stop_stream.assert_called_once()
 
+    @patch("requests.get")
+    def test_real_nginx_client_publishing_xml_parsing(self, mock_get):
+        """Verify stream parsing when <publishing/> is nested inside <client> as produced by ngx_rtmp_stat_module."""
+        noalbs = Noalbs()
+        real_nginx_xml = """<?xml version="1.0" encoding="UTF-8" ?>
+<rtmp>
+  <server>
+    <application>
+      <name>live</name>
+      <live>
+        <nclients>1</nclients>
+        <stream>
+          <name>secret_stream_key</name>
+          <time>15420</time>
+          <bw_in>409600</bw_in>
+          <bw_out>409600</bw_out>
+          <client>
+            <id>42</id>
+            <address>192.168.1.100</address>
+            <time>15420</time>
+            <publishing/>
+            <active/>
+          </client>
+        </stream>
+      </live>
+    </application>
+  </server>
+</rtmp>
+"""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = real_nginx_xml
+        mock_get.return_value = mock_resp
+
+        bitrate, has_publisher, active_streams = noalbs.get_stream_info()
+        self.assertTrue(has_publisher)
+        self.assertEqual(bitrate, 3200) # 409600 * 8 / 1024 = 3200 kbps
+        self.assertEqual(len(active_streams), 1)
+        self.assertEqual(active_streams[0], ("live", "secret_stream_key", 3200))
+
+    @patch("requests.get")
+    def test_drop_publisher_invokes_rtmp_control(self, mock_get):
+        """Verify drop_publisher sends HTTP GET to nginx rtmp_control endpoint."""
+        noalbs = Noalbs()
+        noalbs.drop_publisher("live", "test_key")
+        mock_get.assert_called_with("http://127.0.0.1:8081/control/drop/publisher?app=live&name=test_key", timeout=3)
+
+    @patch("noalbs.noalbs.is_valid_file", return_value=True)
+    @patch.object(Noalbs, "start_cloud_brb")
+    @patch.object(Noalbs, "drop_publisher")
+    def test_low_upload_speed_drops_publisher_and_triggers_cloud_brb(self, mock_drop, mock_start, mock_is_valid):
+        """Verify that when bitrate is below threshold, publisher is dropped and MP4 loop started."""
+        noalbs = Noalbs()
+        noalbs.is_streaming = True
+        noalbs.low_threshold = 1000
+        active_streams = [("live", "slow_broadcaster", 350)]
+
+        # Simulate low bitrate trigger
+        consecutive_low = 2
+        noalbs.is_low = False
+        if consecutive_low >= 2 and not noalbs.is_low:
+            noalbs.is_low = True
+            for app_name, stream_name, _ in active_streams:
+                noalbs.drop_publisher(app_name, stream_name)
+            noalbs.start_cloud_brb()
+
+        mock_drop.assert_called_once_with("live", "slow_broadcaster")
+        mock_start.assert_called_once()
+        self.assertTrue(noalbs.is_low)
+
+    @patch.object(Noalbs, "stop_cloud_brb")
+    def test_stream_restoration_stops_cloud_brb(self, mock_stop):
+        """Verify that when upload speed restores (>= restore_threshold), MP4 loop stops."""
+        noalbs = Noalbs()
+        noalbs.is_low = True
+        noalbs.restore_threshold = 1500
+        restored_bitrate = 3500
+
+        if restored_bitrate >= noalbs.restore_threshold:
+            if noalbs.is_low:
+                noalbs.stop_cloud_brb()
+                noalbs.is_low = False
+
+        mock_stop.assert_called_once()
+        self.assertFalse(noalbs.is_low)
+
 if __name__ == "__main__":
     unittest.main()

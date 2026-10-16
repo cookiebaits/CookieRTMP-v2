@@ -1102,17 +1102,32 @@ ensure_brb_video_transcoded() {
                 fi
             fi
 
+            local has_audio=""
+            if command -v ffprobe &> /dev/null; then
+                has_audio=$(ffprobe -v error -select_streams a -show_entries stream=codec_name -of default=noprintwrappers=1:nokey=1 "${target}.tmp" 2>/dev/null || true)
+            fi
+
+            local audio_args=()
+            local map_args=()
+            if [ -z "$has_audio" ]; then
+                echo -e "${YELLOW}Source video has no audio track. Synthesizing 48kHz stereo AAC broadcast audio track...${NC}"
+                audio_args=("-f" "lavfi" "-i" "anullsrc=channel_layout=stereo:sample_rate=48000")
+                map_args=("-map" "0:v:0" "-map" "1:a:0" "-shortest")
+            fi
+
             # Strict broadcast formatting:
             # - Profile High, Level 4.1, yuv420p
-            # - Fixed 60fps frame rate (-r 60) with closed GOP every 1-2 sec (-g 60 -keyint_min 60 -sc_threshold 0)
+            # - Fixed 60fps frame rate (-r 60) with 2-second closed GOP (-g 120 -keyint_min 120 -sc_threshold 0)
             # - Strict Constant Bitrate (CBR) targeting 3000k (-b:v 3000k -minrate 3000k -maxrate 3000k -bufsize 3000k)
             # - Broadcast audio: AAC-LC, 48000 Hz, 2 channels (stereo), 160 kbps
             # - MP4 container flags: +faststart for instant playback and looping
             ffmpeg -y -hide_banner -loglevel warning -i "${target}.tmp" \
-                -c:v libx264 -preset medium -profile:v high -level:v 4.1 -pix_fmt yuv420p \
-                -r 60 -g 60 -keyint_min 60 -sc_threshold 0 \
+                "${audio_args[@]}" \
+                -c:v libx264 -preset veryfast -profile:v high -level:v 4.1 -pix_fmt yuv420p \
+                -r 60 -g 120 -keyint_min 120 -sc_threshold 0 \
                 -b:v 3000k -minrate 3000k -maxrate 3000k -bufsize 3000k \
                 -c:a aac -ar 48000 -ac 2 -b:a 160k \
+                "${map_args[@]}" \
                 -movflags +faststart \
                 -progress pipe:1 "$target" 2>/dev/null | while read -r line; do
                 if [[ "$line" == out_time_us=* ]]; then
